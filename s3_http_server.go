@@ -6,6 +6,8 @@ import (
 	"io/ioutil"
 	"net/http"
 
+	uuid "github.com/satori/go.uuid"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
@@ -173,6 +175,8 @@ func specificPicture(w http.ResponseWriter, r *http.Request) {
 
 }
 func getNetherPortalImage(w http.ResponseWriter, r *http.Request) {
+	fmt.Println("SOMEOMEOEMOEMEJK")
+
 
 	var nj = r.URL.Query()
 	fmt.Println("filename: ", nj["name"][0])
@@ -236,6 +240,57 @@ func uploadPicture(w http.ResponseWriter, r *http.Request) {
 	fmt.Printf("\nFile uploaded to: %s\n", aws.StringValue(&result.Location))
 }
 
+func saveImage(w http.ResponseWriter, r *http.Request) {
+	fmt.Println("we got an image request...?")
+	sess := session.Must(session.NewSession(&aws.Config{
+				Region: aws.String(REGION),
+			}))
+
+	uploader := s3manager.NewUploader(sess)
+
+	name := r.URL.Query()["name"][0] + uuid.NewV4().String()
+	// get a key name from the url params array of json and byte arrays
+	result, err := uploader.Upload(&s3manager.UploadInput{
+		Bucket: aws.String(BUCKET_NAME),
+		Key: aws.String(name),
+		Body: r.Body,
+	})
+	panik(err)
+
+	fmt.Printf("\nFile uploaded to: %s\n", aws.StringValue(&result.Location))
+
+	w.WriteHeader(http.StatusAccepted)
+
+	var nameMap = map[string]string {
+		"name": name,
+	}
+	bytes, err := json.Marshal(nameMap)
+	panik(err)
+	w.Write(bytes)
+}
+
+func deleteImage(writer http.ResponseWriter, request *http.Request) {
+	imageName := request.URL.Query()["name"][0]
+
+	sess := session.Must(session.NewSession(&aws.Config{
+		Region: aws.String(REGION),
+	}))
+	svc := s3.New(sess)
+
+	input := &s3.DeleteObjectInput{
+		Bucket: aws.String(BUCKET_NAME),
+		Key: aws.String(imageName),
+	}
+	result, err := svc.DeleteObject(input)
+	if err != nil {
+		writer.WriteHeader(http.StatusForbidden)
+		panic(err)
+	}
+	writer.WriteHeader(http.StatusAccepted)
+	fmt.Println("The result was successful?... -> ", result)
+}
+
+
 func panik(err error) {
 	if err != nil {
 		panic(err)
@@ -247,11 +302,22 @@ func main() {
 	fmt.Println("Server running @ localhost:1234...")
 
 	http.HandleFunc("/favicon.ico", doNothing)
+	http.HandleFunc("/ping", ping)
 	http.Handle("/pictures", corsHandler(http.HandlerFunc(pictures)))
 	http.Handle("/picturename", corsHandler(http.HandlerFunc(picturename)))
 	http.Handle("/specificpicture", corsHandler(http.HandlerFunc(specificPicture)))
 	http.Handle("/allpicturenames", corsHandler(http.HandlerFunc(allPictureNames)))
 	http.HandleFunc("/uploadpicture", uploadPicture)
 	http.HandleFunc("/getnetherportalimage", getNetherPortalImage)
+	http.HandleFunc("/saveimage", saveImage)
+	http.HandleFunc("/deleteimage", deleteImage)
 	http.ListenAndServe(":1234", nil)
+}
+
+func ping(writer http.ResponseWriter, request *http.Request) {
+
+	writer.WriteHeader(http.StatusOK)
+	message, err := json.Marshal(map[string]string{"ping": "ping"})
+	panik(err)
+	writer.Write(message)
 }
